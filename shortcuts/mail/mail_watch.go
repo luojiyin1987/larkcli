@@ -426,6 +426,12 @@ var MailWatch = common.Shortcut{
 
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+		defer signal.Stop(sigCh)
+
+		watchCtx, cancelWatch := context.WithCancel(ctx)
+		defer cancelWatch()
+
+		shutdownBySignal := make(chan struct{})
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {
@@ -440,12 +446,21 @@ var MailWatch = common.Shortcut{
 			} else {
 				info("Mailbox unsubscribed.")
 			}
-			signal.Stop(sigCh)
-			os.Exit(0)
+			cancelWatch()
+			close(shutdownBySignal)
 		}()
 
 		info("Connected. Waiting for mail events... (Ctrl+C to stop)")
-		if err := cli.Start(ctx); err != nil {
+		if err := cli.Start(watchCtx); err != nil {
+			select {
+			case <-shutdownBySignal:
+				return nil
+			default:
+			}
+			if errors.Is(err, context.Canceled) {
+				unsubscribe() //nolint:errcheck // best-effort cleanup
+				return nil
+			}
 			unsubscribe() //nolint:errcheck // best-effort cleanup
 			return output.ErrNetwork("WebSocket connection failed: %v", err)
 		}
