@@ -259,13 +259,24 @@ var MailWatch = common.Shortcut{
 			})
 			return unsubErr
 		}
+		var unsubscribeLogOnce sync.Once
+		unsubscribeWithLog := func() {
+			unsubscribeLogOnce.Do(func() {
+				info("Unsubscribing mailbox events...")
+				if err := unsubscribe(); err != nil {
+					fmt.Fprintf(errOut, "Warning: unsubscribe failed: %v\n", err)
+				} else {
+					info("Mailbox unsubscribed.")
+				}
+			})
+		}
+		defer unsubscribeWithLog()
 
 		// Resolve "me" to the actual email address so we can filter events.
 		mailboxFilter := mailbox
 		if mailbox == "me" {
 			resolved, profileErr := fetchMailboxPrimaryEmail(runtime, "me")
 			if profileErr != nil {
-				unsubscribe() //nolint:errcheck // best-effort cleanup; primary error is profileErr
 				return enhanceProfileError(profileErr)
 			}
 			mailboxFilter = resolved
@@ -452,25 +463,12 @@ var MailWatch = common.Shortcut{
 		if err := cli.Start(watchCtx); err != nil {
 			select {
 			case <-shutdownBySignal:
-				info("Unsubscribing mailbox events...")
-				if unsubErr := unsubscribe(); unsubErr != nil {
-					fmt.Fprintf(errOut, "Warning: unsubscribe failed: %v\n", unsubErr)
-				} else {
-					info("Mailbox unsubscribed.")
-				}
 				return nil
 			default:
 			}
 			if errors.Is(err, context.Canceled) {
-				info("Unsubscribing mailbox events...")
-				if unsubErr := unsubscribe(); unsubErr != nil {
-					fmt.Fprintf(errOut, "Warning: unsubscribe failed: %v\n", unsubErr)
-				} else {
-					info("Mailbox unsubscribed.")
-				}
 				return nil
 			}
-			unsubscribe() //nolint:errcheck // best-effort cleanup
 			return output.ErrNetwork("WebSocket connection failed: %v", err)
 		}
 		return nil
