@@ -446,8 +446,8 @@ var MailWatch = common.Shortcut{
 			} else {
 				info("Mailbox unsubscribed.")
 			}
-			cancelWatch()
 			close(shutdownBySignal)
+			cancelWatch()
 		}()
 
 		info("Connected. Waiting for mail events... (Ctrl+C to stop)")
