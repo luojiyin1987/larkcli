@@ -18,6 +18,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
@@ -282,7 +283,7 @@ var MailWatch = common.Shortcut{
 			mailboxFilter = resolved
 		}
 
-		eventCount := 0
+		var eventCount int64
 
 		handleEvent := func(data map[string]interface{}) {
 			// Extract event body
@@ -348,7 +349,7 @@ var MailWatch = common.Shortcut{
 				}
 			}
 
-			eventCount++
+			atomic.AddInt64(&eventCount, 1)
 
 			// Prompt injection detection: warn when email body contains known injection patterns.
 			// Body fields may be base64url-encoded; decode before scanning.
@@ -451,7 +452,10 @@ var MailWatch = common.Shortcut{
 			}()
 			select {
 			case <-sigCh:
-				info(fmt.Sprintf("\nShutting down... (received %d events)", eventCount))
+				// Restore default signal behavior so a second Ctrl+C can force terminate.
+				signal.Stop(sigCh)
+				signal.Reset(os.Interrupt, syscall.SIGTERM)
+				info(fmt.Sprintf("\nShutting down... (received %d events)", atomic.LoadInt64(&eventCount)))
 				close(shutdownBySignal)
 				cancelWatch()
 			case <-watchCtx.Done():
