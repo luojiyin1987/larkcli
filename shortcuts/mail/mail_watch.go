@@ -77,6 +77,23 @@ func detectPromptInjection(content string) bool {
 	return false
 }
 
+func waitForMailWatchShutdown(startErrCh <-chan error, shutdownBySignal <-chan struct{}) error {
+	select {
+	case <-shutdownBySignal:
+		return nil
+	case err := <-startErrCh:
+		select {
+		case <-shutdownBySignal:
+			return nil
+		default:
+		}
+		if err == nil || errors.Is(err, context.Canceled) {
+			return nil
+		}
+		return err
+	}
+}
+
 var MailWatch = common.Shortcut{
 	Service:     "mail",
 	Command:     "+watch",
@@ -464,15 +481,11 @@ var MailWatch = common.Shortcut{
 		}()
 
 		info("Connected. Waiting for mail events... (Ctrl+C to stop)")
-		if err := cli.Start(watchCtx); err != nil {
-			select {
-			case <-shutdownBySignal:
-				return nil
-			default:
-			}
-			if errors.Is(err, context.Canceled) {
-				return nil
-			}
+		startErrCh := make(chan error, 1)
+		go func() {
+			startErrCh <- cli.Start(watchCtx)
+		}()
+		if err := waitForMailWatchShutdown(startErrCh, shutdownBySignal); err != nil {
 			return output.ErrNetwork("WebSocket connection failed: %v", err)
 		}
 		return nil
