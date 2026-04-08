@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [[ -z "${BASH_VERSINFO:-}" || ${BASH_VERSINFO[0]} -lt 4 ]]; then
+  echo "error: lark-backup.sh requires Bash 4 or newer. Current bash version: ${BASH_VERSION:-unknown}" >&2
+  exit 1
+fi
+
 IDENTITY="user"
 OUTPUT_DIR=""
 TARGET_TYPE=""
@@ -182,8 +187,10 @@ infer_type() {
         dox*) echo "docx" ;;    # doxcn... for new documents
         sht*) echo "sheet" ;;   # shtcn... for sheets
         box*) echo "file" ;;    # boxcn... for files
-        # Legacy/undocumented prefixes - require explicit --type
-        # Removed: wikcn*, doccn*, app_*, bascn* to avoid misclassification
+        # Exact known legacy/documented forms
+        doccn*) echo "doc" ;;   # doccn... for old docs
+        wikcn*) echo "wiki" ;;  # wikcn... for wiki tokens
+        # Other ambiguous prefixes require explicit --type
         *) fail "cannot infer target type from token: $target; pass --type" ;;
       esac
       ;;
@@ -310,6 +317,7 @@ list_all_base_tables() {
     mv "$next_merged_json" "$merged_json"
 
     count="$(jq -r '(.data.items // []) | length' "$page_json")"
+    has_more="$(jq -r '.data.has_more // false' "$page_json")"
     total="$(jq -r '.data.total // 0' "$page_json")"
 
     if [[ "$count" -eq 0 ]]; then
@@ -318,6 +326,9 @@ list_all_base_tables() {
 
     offset=$((offset + count))
 
+    if [[ "$has_more" == "true" ]]; then
+      continue
+    fi
     if [[ "$total" =~ ^[0-9]+$ ]] && [[ "$total" -gt 0 ]] && [[ "$offset" -lt "$total" ]]; then
       continue
     fi
@@ -599,34 +610,53 @@ main() {
     esac
   done
 
+  case "$command" in
+    auto)
+      [[ -n "$target" ]] || fail "--target is required for auto"
+      ;;
+    folder)
+      [[ -n "$folder_token" ]] || fail "--folder-token is required for folder"
+      ;;
+    base)
+      [[ -n "$base_token" ]] || fail "--base-token is required for base"
+      ;;
+    doc)
+      [[ -n "$token" ]] || fail "--token is required for doc"
+      [[ "$doc_type" == "docx" || "$doc_type" == "doc" ]] || fail "--doc-type must be docx or doc"
+      ;;
+    sheet)
+      [[ -n "$token" ]] || fail "--token is required for sheet"
+      ;;
+    file)
+      [[ -n "$token" ]] || fail "--token is required for file"
+      ;;
+    *)
+      usage
+      fail "unknown command: $command"
+      ;;
+  esac
+
   OUTPUT_DIR="$(prepare_output_dir "$OUTPUT_DIR")"
   log "identity=${IDENTITY}"
   log "output_dir=${OUTPUT_DIR}"
 
   case "$command" in
     auto)
-      [[ -n "$target" ]] || fail "--target is required for auto"
       backup_auto "$target" "$OUTPUT_DIR"
       ;;
     folder)
-      [[ -n "$folder_token" ]] || fail "--folder-token is required for folder"
       backup_folder "$folder_token" "$OUTPUT_DIR"
       ;;
     base)
-      [[ -n "$base_token" ]] || fail "--base-token is required for base"
       backup_base "$base_token" "$OUTPUT_DIR"
       ;;
     doc)
-      [[ -n "$token" ]] || fail "--token is required for doc"
-      [[ "$doc_type" == "docx" || "$doc_type" == "doc" ]] || fail "--doc-type must be docx or doc"
       backup_doc "$token" "$doc_type" "$OUTPUT_DIR"
       ;;
     sheet)
-      [[ -n "$token" ]] || fail "--token is required for sheet"
       backup_sheet "$token" "$OUTPUT_DIR"
       ;;
     file)
-      [[ -n "$token" ]] || fail "--token is required for file"
       backup_file "$token" "$OUTPUT_DIR"
       ;;
     *)
