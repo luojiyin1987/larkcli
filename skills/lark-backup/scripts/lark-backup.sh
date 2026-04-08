@@ -177,7 +177,11 @@ backup_doc() {
     run_shortcut_json "$fetch_json" \
       lark-cli docs +fetch --as "$IDENTITY" --doc "$token" --format json
     write_json_copy "$fetch_json" "$outdir/fetch.json"
-    jq -r '.data.markdown // empty' "$fetch_json" >"$outdir/content.md"
+    if jq -e '.data.markdown | type == "string" and length > 0' "$fetch_json" >/dev/null; then
+      jq -r '.data.markdown' "$fetch_json" >"$outdir/content.md"
+    else
+      log "docs +fetch returned no markdown; skipping content.md for ${token}"
+    fi
 
     run_shortcut_json "$outdir/export-markdown.json" \
       lark-cli drive +export --as "$IDENTITY" \

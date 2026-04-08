@@ -6,7 +6,7 @@
 
 - `meta.json` — Drive 元数据
 - `fetch.json` — `docs +fetch` 的完整 JSON
-- `content.md` — 从 `fetch.json` 提取出的 Markdown
+- `content.md` — 从 `fetch.json` 提取出的 Markdown；仅当 `fetch.json` 中存在非空 `data.markdown` 时生成
 - `export-markdown.json` — `drive +export --file-extension markdown` 的结果
 - `export-pdf.json` — `drive +export --file-extension pdf` 的结果
 - 实际导出的 `.md` / `.pdf` 文件
