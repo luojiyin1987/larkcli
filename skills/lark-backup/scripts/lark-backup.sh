@@ -38,6 +38,14 @@ json_tmp() {
   printf '%s\n' "$f"
 }
 
+require_flag_value() {
+  local flag="$1"
+  local value="${2:-}"
+  if [[ -z "$value" || "$value" == --* ]]; then
+    fail "${flag} requires a value"
+  fi
+}
+
 usage() {
   cat <<'EOF'
 Usage:
@@ -82,8 +90,14 @@ prepare_output_dir() {
 
 run_shortcut_json() {
   local out="$1"
+  local err_out
   shift
-  "$@" >"$out"
+  err_out="$(json_tmp)"
+  if ! "$@" >"$out" 2>"$err_out"; then
+    [[ -s "$out" ]] && cat "$out" >&2
+    [[ -s "$err_out" ]] && cat "$err_out" >&2
+    fail "shortcut command failed: $*"
+  fi
   jq -e '.ok == true' "$out" >/dev/null || {
     cat "$out" >&2
     fail "shortcut command failed: $*"
@@ -92,8 +106,14 @@ run_shortcut_json() {
 
 run_service_json() {
   local out="$1"
+  local err_out
   shift
-  "$@" >"$out"
+  err_out="$(json_tmp)"
+  if ! "$@" >"$out" 2>"$err_out"; then
+    [[ -s "$out" ]] && cat "$out" >&2
+    [[ -s "$err_out" ]] && cat "$err_out" >&2
+    fail "service command failed: $*"
+  fi
   jq -e '.code == 0' "$out" >/dev/null || {
     cat "$out" >&2
     fail "service command failed: $*"
@@ -103,12 +123,31 @@ run_service_json() {
 extract_token() {
   local target="$1"
   local clean="${target%%\?*}"
+  local result=""
   clean="${clean%%#*}"
   if [[ "$clean" == http://* || "$clean" == https://* ]]; then
-    printf '%s\n' "${clean##*/}"
-    return
+    if [[ "$clean" =~ /drive/folder/([^/]+)/?$ ]]; then
+      result="${BASH_REMATCH[1]}"
+    elif [[ "$clean" =~ /drive/file/([^/]+)/?$ ]]; then
+      result="${BASH_REMATCH[1]}"
+    elif [[ "$clean" =~ /wiki/([^/]+)/?$ ]]; then
+      result="${BASH_REMATCH[1]}"
+    elif [[ "$clean" =~ /docx/([^/]+)/?$ ]]; then
+      result="${BASH_REMATCH[1]}"
+    elif [[ "$clean" =~ /doc/([^/]+)/?$ ]]; then
+      result="${BASH_REMATCH[1]}"
+    elif [[ "$clean" =~ /sheets/([^/]+)/?$ ]]; then
+      result="${BASH_REMATCH[1]}"
+    elif [[ "$clean" =~ /base/([^/]+)/?$ ]]; then
+      result="${BASH_REMATCH[1]}"
+    else
+      fail "cannot extract token from URL: $target"
+    fi
+  else
+    result="${clean%/}"
   fi
-  printf '%s\n' "$clean"
+  [[ -n "$result" ]] || fail "cannot extract token from: $target"
+  printf '%s\n' "$result"
 }
 
 infer_type() {
@@ -139,12 +178,13 @@ infer_type() {
     *)
       case "$clean" in
         fld*) echo "folder" ;;
-        wik*) echo "wiki" ;;
+        wikcn*) echo "wiki" ;;
         sht*) echo "sheet" ;;
         dox*) echo "docx" ;;
-        doc*) echo "doc" ;;
-        app_*|bascn*|bas*) echo "bitable" ;;
-        box*|file_*) echo "file" ;;
+        doccn*) echo "doc" ;;
+        # Keep known token families, but require --type for ambiguous raw tokens.
+        app_*|bascn*) echo "bitable" ;;
+        box*) echo "file" ;;
         *) fail "cannot infer target type from token: $target; pass --type" ;;
       esac
       ;;
@@ -241,12 +281,9 @@ backup_file() {
 
   (
     cd "$outdir"
-    lark-cli drive +download --as "$IDENTITY" --file-token "$token" >download.json
+    run_shortcut_json "download.json" \
+      lark-cli drive +download --as "$IDENTITY" --file-token "$token"
   )
-  jq -e '.ok == true' "$outdir/download.json" >/dev/null || {
-    cat "$outdir/download.json" >&2
-    fail "file download failed for ${token}"
-  }
 }
 
 list_all_base_tables() {
@@ -362,9 +399,7 @@ backup_base() {
       if [[ "$total" =~ ^[0-9]+$ ]] && [[ "$total" -gt "$offset" ]]; then
         continue
       fi
-      if [[ "$count" -lt 200 ]]; then
-        break
-      fi
+      break
     done
   done < <(jq -r '.data.items[]? | [.table_id, (.table_name // .table_id)] | @tsv' "$tables_json")
 }
@@ -516,35 +551,43 @@ main() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --as)
-        IDENTITY="${2:-}"
+        require_flag_value "$1" "${2:-}"
+        IDENTITY="$2"
         shift 2
         ;;
       --output-dir)
-        OUTPUT_DIR="${2:-}"
+        require_flag_value "$1" "${2:-}"
+        OUTPUT_DIR="$2"
         shift 2
         ;;
       --type)
-        TARGET_TYPE="${2:-}"
+        require_flag_value "$1" "${2:-}"
+        TARGET_TYPE="$2"
         shift 2
         ;;
       --target)
-        target="${2:-}"
+        require_flag_value "$1" "${2:-}"
+        target="$2"
         shift 2
         ;;
       --token)
-        token="${2:-}"
+        require_flag_value "$1" "${2:-}"
+        token="$2"
         shift 2
         ;;
       --folder-token)
-        folder_token="${2:-}"
+        require_flag_value "$1" "${2:-}"
+        folder_token="$2"
         shift 2
         ;;
       --base-token)
-        base_token="${2:-}"
+        require_flag_value "$1" "${2:-}"
+        base_token="$2"
         shift 2
         ;;
       --doc-type)
-        doc_type="${2:-}"
+        require_flag_value "$1" "${2:-}"
+        doc_type="$2"
         shift 2
         ;;
       -h|--help)
