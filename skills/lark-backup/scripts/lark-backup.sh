@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ -z "${BASH_VERSINFO:-}" || ${BASH_VERSINFO[0]} -lt 4 ]]; then
-  echo "error: lark-backup.sh requires Bash 4 or newer. Current bash version: ${BASH_VERSION:-unknown}" >&2
+if [[ "${BASH_VERSINFO[0]}" -lt 4 ]]; then
+  echo "error: lark-backup.sh requires Bash 4+ (found ${BASH_VERSION})" >&2
   exit 1
 fi
 
