@@ -94,6 +94,16 @@ func waitForMailWatchShutdown(startErrCh <-chan error, shutdownBySignal <-chan s
 	}
 }
 
+func finalizeMailWatchCleanup(runErr, cleanupErr error) error {
+	if cleanupErr == nil {
+		return runErr
+	}
+	if runErr != nil {
+		return runErr
+	}
+	return cleanupErr
+}
+
 var MailWatch = common.Shortcut{
 	Service:     "mail",
 	Command:     "+watch",
@@ -180,7 +190,7 @@ var MailWatch = common.Shortcut{
 		}
 		return d
 	},
-	Execute: func(ctx context.Context, runtime *common.RuntimeContext) error {
+	Execute: func(ctx context.Context, runtime *common.RuntimeContext) (retErr error) {
 		if runtime.Bool("print-output-schema") {
 			printWatchOutputSchema(runtime)
 			return nil
@@ -278,17 +288,22 @@ var MailWatch = common.Shortcut{
 			return unsubErr
 		}
 		var unsubscribeLogOnce sync.Once
-		unsubscribeWithLog := func() error {
+		unsubscribeWithLog := func(primaryErr error) error {
 			unsubscribeLogOnce.Do(func() {
 				info("Unsubscribing mailbox events...")
 				if err := unsubscribe(); err != nil {
-					fmt.Fprintf(errOut, "Warning: unsubscribe failed: %v\n", err)
+					if primaryErr != nil {
+						fmt.Fprintf(errOut, "Warning: unsubscribe failed during cleanup: %v\n", err)
+					}
 				} else {
 					info("Mailbox unsubscribed.")
 				}
 			})
 			return unsubErr
 		}
+		defer func() {
+			retErr = finalizeMailWatchCleanup(retErr, unsubscribeWithLog(retErr))
+		}()
 		// Resolve "me" to the actual email address so we can filter events.
 		mailboxFilter := mailbox
 		if mailbox == "me" {
@@ -486,12 +501,6 @@ var MailWatch = common.Shortcut{
 		}()
 		if err := waitForMailWatchShutdown(startErrCh, shutdownBySignal); err != nil {
 			return output.ErrNetwork("WebSocket connection failed: %v", err)
-		}
-
-		// Ensure cleanup happens before returning
-		unsubErr = unsubscribeWithLog()
-		if unsubErr != nil {
-			return output.ErrSystem("Failed to unsubscribe mailbox events: %v", unsubErr)
 		}
 		return nil
 	},
