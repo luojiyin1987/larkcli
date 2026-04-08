@@ -43,5 +43,5 @@
 
 1. `docx` 内嵌图片/附件 token 会保留在 `fetch.json` 和 `content.md` 中，但脚本当前**不自动下载每个内嵌素材**。
 2. `slides`、`mindnote`、未知对象类型目前只保存 `entry.json` 并写入 `SKIPPED.txt`。
-3. `base +record-list` 的返回形状在不同环境可能不同，脚本按较宽松规则分页并把**原始响应完整落盘**，不要假设只有一种 schema。
+3. `base +record-list` 当前兼容两种已知返回形状：`.data.records.rows` 和 `.data.data`。如果响应不匹配这两种 schema，脚本会直接报错，避免静默截断备份；同时原始响应仍会完整落盘到 `records-page-*.json` 便于排查。
 4. 文件夹递归时会跳过已访问过的 folder token，避免快捷方式或目录环导致无限循环。
