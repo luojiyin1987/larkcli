@@ -278,7 +278,7 @@ var MailWatch = common.Shortcut{
 			return unsubErr
 		}
 		var unsubscribeLogOnce sync.Once
-		unsubscribeWithLog := func() {
+		unsubscribeWithLog := func() error {
 			unsubscribeLogOnce.Do(func() {
 				info("Unsubscribing mailbox events...")
 				if err := unsubscribe(); err != nil {
@@ -287,9 +287,8 @@ var MailWatch = common.Shortcut{
 					info("Mailbox unsubscribed.")
 				}
 			})
+			return unsubErr
 		}
-		defer unsubscribeWithLog()
-
 		// Resolve "me" to the actual email address so we can filter events.
 		mailboxFilter := mailbox
 		if mailbox == "me" {
@@ -487,6 +486,12 @@ var MailWatch = common.Shortcut{
 		}()
 		if err := waitForMailWatchShutdown(startErrCh, shutdownBySignal); err != nil {
 			return output.ErrNetwork("WebSocket connection failed: %v", err)
+		}
+
+		// Ensure cleanup happens before returning
+		unsubErr = unsubscribeWithLog()
+		if unsubErr != nil {
+			return output.ErrSystem("Failed to unsubscribe mailbox events: %v", unsubErr)
 		}
 		return nil
 	},
